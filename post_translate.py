@@ -3,6 +3,8 @@ import os
 import frontmatter
 import sys
 from dotenv import load_dotenv
+# Import prompt templates
+from prompts import DEFAULT_PROMPT, get_prompt_by_extension
 
 def get_translation(llm_type, messages):
     """Call LLM and get translation results"""
@@ -13,7 +15,7 @@ def get_translation(llm_type, messages):
     )
     return response.choices[0].message.content
 
-def translate_text(text, llm_type, content):
+def translate_text(text, llm_type, content=DEFAULT_PROMPT):
     """Translate text using LLM"""
     total_length = len(text)
     translated_text = ""
@@ -33,7 +35,7 @@ def translate_text(text, llm_type, content):
 
     return translated_text
 
-def translate_title(text, llm_type, content):
+def translate_title(text, llm_type, content=DEFAULT_PROMPT):
     """Translate title using LLM"""
     print(f"Start translating the title...")
     return get_translation(llm_type, [
@@ -41,7 +43,7 @@ def translate_title(text, llm_type, content):
         {"role": "user", "content": text}
     ])
 
-def translate_sumary(text, llm_type, content):
+def translate_sumary(text, llm_type, content=DEFAULT_PROMPT):
     """Translate summary using LLM"""
     print(f"Start translating the summary...")
     return get_translation(llm_type, [
@@ -51,9 +53,13 @@ def translate_sumary(text, llm_type, content):
 
 def process_hugo_post(file_path, 
                       llm_type,
-                      prompt
+                      prompt=None
                       ):
     """Read Hugo post, translate the main text, and generate English version"""
+    # If no prompt is provided, use the appropriate one based on file extension
+    if prompt is None:
+        prompt = get_prompt_by_extension(file_path)
+        
     with open(file_path, "r", encoding="utf-8") as f:
         post = frontmatter.load(f)
 
@@ -124,11 +130,13 @@ if __name__ == "__main__":
         )
         print("Using Deepseek for translation...")
     
-    # Define default prompt
-    default_prompt = "You are a professional translator. Translate the following Chinese text into English while keeping the original meaning. Strictly preserve the original text format in the qmd file, including line breaks, indentation, and any special characters for inserting codes. Do not add, remove, or modify any content. Only return the translated text without any additional explanation, comments, or extra content."
+    # Get the appropriate default prompt based on file extension
+    file_extension = os.path.splitext(post_path)[1].lower()
+    default_prompt = get_prompt_by_extension(post_path)
     
-    # Display the default prompt
-    print("\n默认提示词 (Default prompt):")
+    # Display the default prompt with file type information
+    file_type = file_extension[1:].upper() if file_extension else "default"
+    print(f"\n默认提示词 ({file_type} template):")
     print("-" * 80)
     print(default_prompt)
     print("-" * 80)
@@ -146,4 +154,4 @@ if __name__ == "__main__":
             print("输入为空，将使用默认提示词。")
     
     # Call process_hugo_post with the selected prompt
-    process_hugo_post(os.getenv("POST_DIR"), llm_type, final_prompt)
+    process_hugo_post(post_path, llm_type, final_prompt)
