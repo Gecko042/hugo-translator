@@ -3,6 +3,8 @@ import os
 import frontmatter
 import sys
 from dotenv import load_dotenv
+# Import prompt templates
+from prompts import DEFAULT_PROMPT, get_prompt_by_extension
 
 def get_translation(llm_type, messages):
     """Call LLM and get translation results"""
@@ -13,7 +15,7 @@ def get_translation(llm_type, messages):
     )
     return response.choices[0].message.content
 
-def translate_text(text, llm_type):
+def translate_text(text, llm_type, content=DEFAULT_PROMPT):
     """Translate text using LLM"""
     total_length = len(text)
     translated_text = ""
@@ -25,7 +27,7 @@ def translate_text(text, llm_type):
         chunk = text[i:i + chunk_size]
         translated_text += get_translation(llm_type,
         [
-            {"role": "system", "content": "Translate the following Chinese blog post into English while keeping the original meaning."},
+            {"role": "system", "content": content},
             {"role": "user", "content": chunk}
         ])
         progress = min((i + chunk_size) / total_length * 100, 100)  # Ensure progress does not exceed 100%
@@ -33,35 +35,42 @@ def translate_text(text, llm_type):
 
     return translated_text
 
-def translate_title(text, llm_type):
+def translate_title(text, llm_type, content=DEFAULT_PROMPT):
     """Translate title using LLM"""
     print(f"Start translating the title...")
     return get_translation(llm_type, [
-        {"role": "system", "content": "Translate the following Chinese blog post title into English while keeping the original meaning."},
+        {"role": "system", "content": content},
         {"role": "user", "content": text}
     ])
 
-def translate_sumary(text,llm_type):
+def translate_sumary(text, llm_type, content=DEFAULT_PROMPT):
     """Translate summary using LLM"""
     print(f"Start translating the summary...")
     return get_translation(llm_type, [
-        {"role": "system", "content": "Translate the following Chinese blog post summary into English while keeping the original meaning."},
+        {"role": "system", "content": content},
         {"role": "user", "content": text}
     ])
 
-def process_hugo_post(file_path, llm_type):
+def process_hugo_post(file_path, 
+                      llm_type,
+                      prompt=None
+                      ):
     """Read Hugo post, translate the main text, and generate English version"""
+    # If no prompt is provided, use the appropriate one based on file extension
+    if prompt is None:
+        prompt = get_prompt_by_extension(file_path)
+        
     with open(file_path, "r", encoding="utf-8") as f:
         post = frontmatter.load(f)
 
     # Create English version
     new_metadata = post.metadata
-    new_metadata["title"] = translate_title(new_metadata["title"], llm_type)
+    new_metadata["title"] = translate_title(new_metadata["title"], llm_type, prompt)
     if "summary" in new_metadata:
-        new_metadata["summary"] = translate_sumary(new_metadata["summary"], llm_type)
+        new_metadata["summary"] = translate_sumary(new_metadata["summary"], llm_type, prompt)
 
     # Extract main text and translate
-    translated_content = translate_text(post.content, llm_type)
+    translated_content = translate_text(post.content, llm_type, prompt)
 
     # Generate Hugo English version file
     new_post = frontmatter.Post(translated_content, **new_metadata)
@@ -120,5 +129,29 @@ if __name__ == "__main__":
             base_url=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1"),
         )
         print("Using Deepseek for translation...")
-
-    process_hugo_post(os.getenv("POST_DIR"), llm_type)
+    
+    # Get the appropriate default prompt based on file extension
+    file_extension = os.path.splitext(post_path)[1].lower()
+    default_prompt = get_prompt_by_extension(post_path)
+    
+    # Display the default prompt with file type information
+    file_type = file_extension[1:].upper() if file_extension else "default"
+    print(f"\n默认提示词 ({file_type} template):")
+    print("-" * 80)
+    print(default_prompt)
+    print("-" * 80)
+    
+    # Ask user if they want to use the default prompt
+    use_default = input("\n是否使用默认提示词? (y/n): ").lower().strip()
+    
+    final_prompt = default_prompt
+    if use_default != 'y' and use_default != 'yes':
+        print("\n请输入您的自定义提示词 (Enter your custom prompt):")
+        custom_prompt = input("> ").strip()
+        if custom_prompt:  # Only use custom prompt if not empty
+            final_prompt = custom_prompt
+        else:
+            print("输入为空，将使用默认提示词。")
+    
+    # Call process_hugo_post with the selected prompt
+    process_hugo_post(post_path, llm_type, final_prompt)
